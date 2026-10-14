@@ -1,0 +1,8 @@
+node_modules/
+dist/
+!packages/babel-plugin/dist/
+!packages/babel-plugin/dist/index.cjs
+.expo/
+.turbo/
+.DS_Store
+*.log
