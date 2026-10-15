@@ -8,7 +8,7 @@ interface OverlayProps {
 
 export function Overlay({ layout }: OverlayProps) {
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+    <View pointerEvents="none" style={styles.layer}>
       <View
         style={[
           styles.highlight,
@@ -25,6 +25,10 @@ export function Overlay({ layout }: OverlayProps) {
 }
 
 const styles = StyleSheet.create({
+  layer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20
+  },
   highlight: {
     position: "absolute",
     borderWidth: 2,

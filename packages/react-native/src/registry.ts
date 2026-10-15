@@ -4,12 +4,15 @@ import { findNodeHandle, UIManager } from "react-native";
 import { isAgentLensDevelopment } from "./development";
 import type {
   AgentLensElementMetadata,
+  AgentLensInspectionResult,
   AgentLensRegistryEntry,
   AgentLensSelectedElement,
   ElementLayout
 } from "./types";
 
 const registry = new Map<string, AgentLensRegistryEntry>();
+const listeners = new Set<() => void>();
+const MEASUREMENT_TIMEOUT_MS = 250;
 let mountSequence = 0;
 
 type MeasurableNode = {
@@ -18,21 +21,27 @@ type MeasurableNode = {
   ) => void;
 };
 
-function setForwardedRef<T>(ref: Ref<T> | undefined, value: T | null): void {
+function setForwardedRef<T>(
+  ref: Ref<T> | undefined,
+  value: T | null
+): (() => void) | undefined {
   if (!ref) {
     return;
   }
 
   if (typeof ref === "function") {
-    ref(value);
-    return;
+    const cleanup: unknown = ref(value);
+    return typeof cleanup === "function" ? cleanup as () => void : undefined;
   }
 
   (ref as { current: T | null }).current = value;
 }
 
 function isUsableLayout(layout: ElementLayout): boolean {
-  return layout.width > 0 && layout.height > 0;
+  return (
+    Object.values(layout).every(Number.isFinite) &&
+    layout.width > 0 && layout.height > 0
+  );
 }
 
 function containsPoint(layout: ElementLayout, x: number, y: number): boolean {
@@ -44,52 +53,101 @@ function containsPoint(layout: ElementLayout, x: number, y: number): boolean {
   );
 }
 
-function measureWithNodeMethod(node: MeasurableNode): Promise<ElementLayout | null> {
-  if (typeof node.measureInWindow !== "function") {
-    return Promise.resolve(null);
-  }
-
+function measureWithCallback(
+  measure: (callback: (x: number, y: number, width: number, height: number) => void) => void
+): Promise<ElementLayout | null> {
   return new Promise((resolve) => {
-    node.measureInWindow?.((x, y, width, height) => {
-      const layout = { x, y, width, height };
-      resolve(isUsableLayout(layout) ? layout : null);
-    });
+    const timer = setTimeout(() => resolve(null), MEASUREMENT_TIMEOUT_MS);
+
+    try {
+      measure((x, y, width, height) => {
+        clearTimeout(timer);
+        const layout = { x, y, width, height };
+        resolve(isUsableLayout(layout) ? layout : null);
+      });
+    } catch {
+      clearTimeout(timer);
+      resolve(null);
+    }
   });
 }
 
-function measureWithUIManager(node: unknown): Promise<ElementLayout | null> {
-  const handle = findNodeHandle(node as Parameters<typeof findNodeHandle>[0]);
-
-  if (!handle || typeof UIManager.measureInWindow !== "function") {
-    return Promise.resolve(null);
+export async function measureAgentLensNode(node: unknown): Promise<ElementLayout | null> {
+  if (!node) {
+    return null;
   }
 
-  return new Promise((resolve) => {
-    UIManager.measureInWindow(handle, (x, y, width, height) => {
-      const layout = { x, y, width, height };
-      resolve(isUsableLayout(layout) ? layout : null);
-    });
-  });
+  const measurableNode = node as MeasurableNode;
+  if (typeof measurableNode.measureInWindow === "function") {
+    const layout = await measureWithCallback((callback) =>
+      measurableNode.measureInWindow!(callback)
+    );
+    if (layout) {
+      return layout;
+    }
+  }
+
+  try {
+    const handle = findNodeHandle(node as Parameters<typeof findNodeHandle>[0]);
+    return handle && typeof UIManager.measureInWindow === "function"
+      ? await measureWithCallback((callback) => UIManager.measureInWindow(handle, callback))
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function notifyListeners(): void {
+  listeners.forEach((listener) => listener());
+}
+
+export function subscribeAgentLensRegistry(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+export function getAgentLensRegistrySize(): number {
+  return registry.size;
+}
+
+function getRegistryEntry(id: string): AgentLensRegistryEntry | undefined {
+  return registry.get(id) ?? Array.from(registry.values()).reverse().find(
+    (entry) => entry.metadata.id === id
+  );
 }
 
 export function registerAgentLensElement(
   metadata: AgentLensElementMetadata,
   node: unknown
-): void {
+): string | null {
   if (!isAgentLensDevelopment()) {
-    return;
+    return null;
   }
 
-  registry.set(metadata.id, {
+  const instanceId = `${metadata.id}:${++mountSequence}`;
+  registry.set(instanceId, {
+    instanceId,
     metadata,
     node,
-    mountedAt: ++mountSequence,
-    lastMeasuredLayout: registry.get(metadata.id)?.lastMeasuredLayout
+    mountedAt: mountSequence
   });
+  notifyListeners();
+  return instanceId;
 }
 
 export function unregisterAgentLensElement(id: string): void {
-  registry.delete(id);
+  let removed = registry.delete(id);
+  if (!removed) {
+    for (const [instanceId, entry] of registry) {
+      if (entry.metadata.id === id) {
+        registry.delete(instanceId);
+        removed = true;
+      }
+    }
+  }
+  if (removed) {
+    notifyListeners();
+  }
 }
 
 export function getAgentLensRegistryEntries(): AgentLensRegistryEntry[] {
@@ -99,15 +157,17 @@ export function getAgentLensRegistryEntries(): AgentLensRegistryEntry[] {
 export async function measureAgentLensElement(
   id: string
 ): Promise<ElementLayout | null> {
-  const entry = registry.get(id);
+  const entry = getRegistryEntry(id);
 
   if (!entry) {
     return null;
   }
 
-  const layout =
-    (await measureWithNodeMethod(entry.node as MeasurableNode)) ??
-    (await measureWithUIManager(entry.node));
+  const layout = await measureAgentLensNode(entry.node);
+
+  if (registry.get(entry.instanceId) !== entry) {
+    return null;
+  }
 
   if (layout) {
     entry.lastMeasuredLayout = layout;
@@ -120,13 +180,21 @@ export async function findAgentLensElementAtPoint(
   x: number,
   y: number
 ): Promise<AgentLensSelectedElement | null> {
+  return (await inspectAgentLensPoint(x, y)).selectedElement;
+}
+
+export async function inspectAgentLensPoint(
+  x: number,
+  y: number
+): Promise<AgentLensInspectionResult> {
+  const entries = getAgentLensRegistryEntries();
   if (!isAgentLensDevelopment()) {
-    return null;
+    return { selectedElement: null, registeredCount: 0, measuredCount: 0 };
   }
 
   const measured = await Promise.all(
-    getAgentLensRegistryEntries().map(async (entry) => {
-      const layout = await measureAgentLensElement(entry.metadata.id);
+    entries.map(async (entry) => {
+      const layout = await measureAgentLensElement(entry.instanceId);
 
       return layout
         ? {
@@ -138,8 +206,8 @@ export async function findAgentLensElementAtPoint(
     })
   );
 
-  const matches = measured
-    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+  const usable = measured.filter((item): item is NonNullable<typeof item> => Boolean(item));
+  const matches = usable
     .filter(({ layout }) => containsPoint(layout, x, y))
     .sort((a, b) => {
       if (a.area !== b.area) {
@@ -151,13 +219,14 @@ export async function findAgentLensElementAtPoint(
 
   const selected = matches[0];
 
-  if (!selected) {
-    return null;
-  }
-
   return {
-    metadata: selected.entry.metadata,
-    layout: selected.layout
+    registeredCount: entries.length,
+    measuredCount: usable.length,
+    selectedElement: selected ? {
+      instanceId: selected.entry.instanceId,
+      metadata: selected.entry.metadata,
+      layout: selected.layout
+    } : null
   };
 }
 
@@ -165,15 +234,29 @@ export function createAgentLensRef<T>(
   metadata: AgentLensElementMetadata,
   forwardedRef?: Ref<T>
 ): (node: T | null) => void {
-  return (node) => {
-    setForwardedRef(forwardedRef, node);
+  let instanceId: string | null = null;
+  let forwardedCleanup: (() => void) | undefined;
 
-    if (node) {
-      registerAgentLensElement(metadata, node);
+  return (node) => {
+    if (instanceId) {
+      unregisterAgentLensElement(instanceId);
+      instanceId = null;
+    }
+
+    if (node === null) {
+      if (forwardedCleanup) {
+        const cleanup = forwardedCleanup;
+        forwardedCleanup = undefined;
+        cleanup();
+      } else {
+        setForwardedRef(forwardedRef, null);
+      }
       return;
     }
 
-    unregisterAgentLensElement(metadata.id);
+    forwardedCleanup?.();
+    forwardedCleanup = setForwardedRef(forwardedRef, node);
+    instanceId = registerAgentLensElement(metadata, node);
   };
 }
 

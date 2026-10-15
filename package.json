@@ -10,11 +10,16 @@
     "example/expo-app"
   ],
   "scripts": {
+    "test": "node --test tests/*.test.cjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present"
   },
   "devDependencies": {
+    "@babel/plugin-transform-modules-commonjs": "^7.24.0",
+    "@babel/preset-react": "^7.24.0",
+    "@babel/preset-typescript": "^7.24.0",
     "@types/node": "^20.0.0",
+    "react-test-renderer": "18.2.0",
     "typescript": "^5.4.0"
   }
 }

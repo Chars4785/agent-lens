@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -43,13 +44,17 @@ export function FeedbackPanel({
   }
 
   return (
-    <View style={styles.panel}>
+    <ScrollView
+      contentContainerStyle={styles.panelContent}
+      keyboardShouldPersistTaps="handled"
+      style={styles.panel}
+    >
       <View style={styles.header}>
-        <View>
+        <View style={styles.metadata}>
           <Text style={styles.componentName}>
             {selectedElement.metadata.component}
           </Text>
-          <Text style={styles.sourceText}>
+          <Text selectable style={styles.sourceText}>
             {source.file}:{source.line}:{source.column}
           </Text>
         </View>
@@ -105,24 +110,24 @@ export function FeedbackPanel({
           <Text style={styles.copyText}>Copy Annotation</Text>
         </Pressable>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   panel: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 24,
-    padding: 16,
+    flexGrow: 0,
+    maxHeight: "100%",
     borderRadius: 8,
     backgroundColor: "#111827",
-    shadowColor: "#000000",
-    shadowOpacity: 0.24,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
     elevation: 8
+  },
+  panelContent: {
+    padding: 16,
+  },
+  metadata: {
+    flex: 1,
+    minWidth: 0
   },
   header: {
     flexDirection: "row",
@@ -160,6 +165,7 @@ const styles = StyleSheet.create({
   },
   input: {
     minHeight: 88,
+    maxHeight: 160,
     marginTop: 14,
     padding: 12,
     borderRadius: 6,

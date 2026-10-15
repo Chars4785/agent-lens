@@ -10,10 +10,11 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@agentlens/babel-plugin": "workspace:*",
-    "@agentlens/react-native": "workspace:*",
+    "@agentlens/babel-plugin": "0.1.0",
+    "@agentlens/react-native": "0.1.0",
     "@react-native-clipboard/clipboard": "^1.14.0",
     "expo": "~51.0.0",
+    "expo-status-bar": "~1.12.1",
     "react": "18.2.0",
     "react-native": "0.74.0"
   },

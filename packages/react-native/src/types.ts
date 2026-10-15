@@ -20,6 +20,7 @@ export interface AgentLensElementMetadata {
 }
 
 export interface AgentLensRegistryEntry {
+  instanceId: string;
   metadata: AgentLensElementMetadata;
   node: unknown;
   mountedAt: number;
@@ -27,8 +28,15 @@ export interface AgentLensRegistryEntry {
 }
 
 export interface AgentLensSelectedElement {
+  instanceId?: string;
   metadata: AgentLensElementMetadata;
   layout: ElementLayout;
+}
+
+export interface AgentLensInspectionResult {
+  selectedElement: AgentLensSelectedElement | null;
+  registeredCount: number;
+  measuredCount: number;
 }
 
 export interface AgentLensAnnotation {

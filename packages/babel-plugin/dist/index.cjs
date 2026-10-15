@@ -53,13 +53,15 @@ function agentLensBabelPlugin(api) {
             t.importDeclaration(
               [
                 t.importSpecifier(
-                  state.agentLens.helperId,
+                  t.cloneNode(state.agentLens.helperId),
                   t.identifier("__agentLensCreateRef")
                 )
               ],
               t.stringLiteral(state.opts.importSource || DEFAULT_RUNTIME_IMPORT)
             )
           );
+          // Module transforms need the binding for this late-inserted import.
+          programPath.scope.crawl();
         }
       },
 
@@ -132,7 +134,7 @@ function agentLensBabelPlugin(api) {
         }
 
         const refValue = t.jsxExpressionContainer(
-          t.callExpression(state.agentLens.helperId, [
+          t.callExpression(t.cloneNode(state.agentLens.helperId), [
             createMetadataObject({
               id,
               component,

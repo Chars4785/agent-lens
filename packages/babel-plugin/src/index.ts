@@ -73,7 +73,7 @@ export default function agentLensBabelPlugin(api: ConfigAPI): PluginObj<AgentLen
             t.importDeclaration(
               [
                 t.importSpecifier(
-                  state.agentLens.helperId,
+                  t.cloneNode(state.agentLens.helperId),
                   t.identifier("__agentLensCreateRef")
                 )
               ],
@@ -82,6 +82,8 @@ export default function agentLensBabelPlugin(api: ConfigAPI): PluginObj<AgentLen
               )
             )
           );
+          // Module transforms need the binding for this late-inserted import.
+          programPath.scope.crawl();
         }
       },
 
@@ -151,7 +153,7 @@ export default function agentLensBabelPlugin(api: ConfigAPI): PluginObj<AgentLen
         }
 
         const refValue = t.jsxExpressionContainer(
-          t.callExpression(state.agentLens.helperId, [
+          t.callExpression(t.cloneNode(state.agentLens.helperId), [
             createMetadataObject({
               id,
               component,

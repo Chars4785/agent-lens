@@ -26,8 +26,20 @@ The project is intentionally agent-agnostic. There is no MCP server, AI API inte
 
 ## Installation
 
+The packages are not published to npm yet. From this repository's root, create
+the two installable archives:
+
 ```sh
-npm install @agentlens/react-native @agentlens/babel-plugin @react-native-clipboard/clipboard
+npm pack --workspace @agentlens/react-native
+npm pack --workspace @agentlens/babel-plugin
+```
+
+Copy the archives into your app's `vendor` directory, then run these commands
+from the app root. Keep the archives in the app repository for repeatable installs.
+
+```sh
+npm install ./vendor/agentlens-react-native-0.1.0.tgz @react-native-clipboard/clipboard
+npm install -D ./vendor/agentlens-babel-plugin-0.1.0.tgz
 ```
 
 Configure Babel in an Expo or React Native app:
@@ -84,7 +96,12 @@ The plugin injects official React Native props only:
 
 ## How Selection Works
 
-In inspect mode, AgentLens renders a transparent full-screen tap catcher above the application. On tap, it measures every registered element using `measureInWindow`, filters elements whose bounds contain the tap point, and selects the smallest matching element. That keeps V0.1 simple and avoids depending on private native hit-testing APIs.
+In inspect mode, AgentLens renders a transparent native modal above the application.
+The toolbar reports the registered element count. On tap, it measures every
+registered instance using `measureInWindow`, converts the tap to window
+coordinates, and selects the smallest matching element. Repeated JSX instances
+are registered separately. Missing instrumentation, failed measurements, and
+unmatched taps are reported in the inspector instead of silently doing nothing.
 
 ## Annotation Format
 
@@ -113,6 +130,7 @@ In inspect mode, AgentLens renders a transparent full-screen tap catcher above t
 - Parent/child navigation is not implemented.
 - Recycled list rows, portals, bottom sheets, gesture-handler surfaces, and animated native components need more validation.
 - Clipboard copy uses `@react-native-clipboard/clipboard`.
+- Expo requires a native development build; Expo Go does not include this clipboard module.
 - Production builds should disable the Babel plugin. The runtime also returns `children` unchanged when `__DEV__` is false.
 
 ## Example App
@@ -120,9 +138,41 @@ In inspect mode, AgentLens renders a transparent full-screen tap catcher above t
 An Expo example lives in `example/expo-app`.
 
 ```sh
-cd example/expo-app
 npm install
-npm run ios
+npm run ios --workspace @agentlens/example-expo-app
 ```
 
-Use the floating AgentLens button, tap an instrumented element, enter feedback, and copy the annotation JSON.
+Run these commands from the repository root. Use the floating AgentLens button,
+tap an instrumented element, enter feedback, and copy the annotation JSON.
+Drag the floating button to uncover app controls. Its position stays in place
+while opening and closing the inspector, and is clamped when the available area
+changes. A full app reload resets the position. Screen reader actions also allow
+moving the button up, down, left, and right.
+
+## Testing
+
+```sh
+npm ci
+npm test
+npm run typecheck
+```
+
+The regression tests cover repeated instances, native measurement failures and
+timeouts, ref forwarding, Babel instrumentation, production behavior, and the
+selection-to-clipboard flow. Native measurements and the clipboard are mocked;
+these tests do not replace simulator or device checks.
+
+For native validation, run the example development build and check:
+
+1. Normal app actions work while the inspector is closed.
+2. Opening AgentLens shows a nonzero element count.
+3. Tapping a supported element highlights it and opens its source and feedback panel.
+4. Entering feedback and pressing Copy Annotation copies valid JSON with the correct source and layout.
+5. Closing the panel and selecting another element works, including repeated rows.
+6. Done exits inspection and restores normal app interactions.
+7. Dragging the launcher moves it without opening inspection; a tap still opens it.
+8. The launcher stays within the available area after dragging or rotating the device.
+
+If the toolbar shows zero elements, verify the app's Babel plugin configuration
+and restart Metro with its cache cleared. Apps installed from `.tgz` archives
+need newly packed and reinstalled archives to receive local library changes.
